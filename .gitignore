@@ -1,0 +1,10 @@
+# secrets — never commit broker keys
+.env
+
+# runtime artifacts
+logs/
+data/*.csv
+posture/posture.json
+__pycache__/
+*.pyc
+.venv/
