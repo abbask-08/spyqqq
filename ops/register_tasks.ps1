@@ -1,5 +1,5 @@
 # Registers the two weekday Task Scheduler jobs:
-#   SpyQqqBot-Posture  ~8:45 AM ET  (Claude risk posture, Job A)
+#   SpyQqqBot-Posture  ~9:15 AM ET  (Claude risk posture, Job A)
 #   SpyQqqBot-Trade    ~3:45 PM ET  (trading run, Job B)
 #
 # Times are converted from ET to this machine's local time at registration.
@@ -19,7 +19,7 @@ function Get-LocalTimeForEt([int]$Hour, [int]$Minute) {
     return $utc.ToLocalTime()
 }
 
-$postureAt = Get-LocalTimeForEt 8 45
+$postureAt = Get-LocalTimeForEt 9 15
 $tradeAt   = Get-LocalTimeForEt 15 45
 $days = 'Monday','Tuesday','Wednesday','Thursday','Friday'
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -WakeToRun `

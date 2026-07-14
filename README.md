@@ -25,7 +25,7 @@ before even discussing real money.
 ## How it works
 
 ```
-Job A (weekdays ~8:45 AM ET)          Job B (weekdays ~3:45 PM ET)
+Job A (weekdays ~9:15 AM ET)          Job B (weekdays ~3:45 PM ET)
 claude -p (Pro plan, headless)        python run_bot.py
   market-breadth-analyzer               1. NYSE calendar guard
   ibd-distribution-day-monitor          2. fetch daily bars (Alpaca IEX, free)
