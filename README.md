@@ -91,7 +91,7 @@ Check in weekly:
 |---|---|
 | Kill switch tripped | Read the reason in `logs/bot.log`, review trades, then `python run_bot.py --resume` |
 | Posture missing/stale | Bot already degraded to NEUTRAL; check `logs/posture.log` |
-| Missed a day (PC off) | Task fires on wake ("run ASAP after missed start"); the calendar guard keeps it safe |
+| Missed a day (PC off) | Task fires on wake ("run ASAP after missed start"); a delayed run still manages exits but won't enter outside the last 75 min before the close |
 | Emergency stop | Disable both tasks in Task Scheduler; positions still have resting stop orders |
 | Change parameters | Edit `config.yaml`, re-run the backtest gate before trading on |
 

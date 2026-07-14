@@ -30,8 +30,12 @@ $jobs = @(
     @{ Name = 'SpyQqqBot-Trade';   Cmd = Join-Path $repo 'ops\run_bot.cmd';        At = $tradeAt }
 )
 
+$hider = Join-Path $repo 'ops\run_hidden.vbs'
 foreach ($job in $jobs) {
-    $action  = New-ScheduledTaskAction -Execute $job.Cmd -WorkingDirectory $repo
+    # wscript + run_hidden.vbs: no console window, so nobody can close (kill)
+    # the job by accident; progress goes to logs\*.log instead.
+    $action = New-ScheduledTaskAction -Execute 'wscript.exe' `
+        -Argument ('//B "{0}" "{1}"' -f $hider, $job.Cmd) -WorkingDirectory $repo
     $trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek $days -At $job.At
     Register-ScheduledTask -TaskName $job.Name -Action $action -Trigger $trigger `
         -Settings $settings -Description 'SPY/QQQ paper-trading bot (see spy-qqq-bot repo)' `

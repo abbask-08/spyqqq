@@ -67,13 +67,21 @@ def reconcile(broker, state: dict, symbols: list[str], trades_csv, dry: bool) ->
             }
         elif qty == 0 and tracked is not None:
             # Stop order filled (or manual close) since the last run.
-            exit_px = tracked.get("stop") or tracked["entry_price"]
-            pnl = (exit_px - tracked["entry_price"]) * tracked["qty"]
-            log.warning("%s: position gone from broker (stop filled?) pnl~%.2f", symbol, pnl)
-            risk.record_closed_trade(state, pnl)
+            stop = tracked.get("stop")
+            if stop:
+                pnl = (stop - tracked["entry_price"]) * tracked["qty"]
+                log.warning("%s: position gone from broker (stop filled?) pnl~%.2f", symbol, pnl)
+                risk.record_closed_trade(state, pnl)
+                pnl_field = round(pnl, 2)
+            else:
+                # Adopted position with no known stop: don't fabricate a PnL
+                # of zero — that would silently reset the loss-streak counter.
+                log.warning("%s: position gone from broker; exit price unknown "
+                            "(adopted position) — check the Alpaca dashboard", symbol)
+                pnl_field = ""
             journal.log_trade(
                 trades_csv, symbol=symbol, side="SELL", qty=tracked["qty"],
-                price=exit_px, reason="stop_filled_or_manual", pnl=round(pnl, 2),
+                price=stop or "", reason="stop_filled_or_manual", pnl=pnl_field,
                 dry_run=False,
             )
             del state["positions"][symbol]
@@ -137,6 +145,8 @@ def main() -> int:
         log.warning("KILL SWITCH ACTIVE: %s — exits still processed, no new entries. "
                     "Run with --resume after reviewing.", halt_reason)
 
+    # ---- pass 1: fetch data and process exits ----
+    latest = {}
     for symbol in cfg["symbols"]:
         try:
             bars = data.get_daily_bars(symbol, lookback_days=max(400, params.sma_period + 60))
@@ -145,70 +155,91 @@ def main() -> int:
             continue
         ind = compute_indicators(bars, params)
         row = ind.iloc[-1]
+        latest[symbol] = row
         log.info(
             "%s close=%.2f sma=%.2f rsi=%.1f atr=%.2f",
             symbol, row["close"], row["sma"], row["rsi"], row["atr"],
         )
 
         tracked = state["positions"].get(symbol)
-        if tracked:
-            days_held = calendar_guard.trading_days_between(tracked["entry_date"], row.name)
-            reason = exit_signal(row, days_held, params)
-            if reason:
-                pnl = (row["close"] - tracked["entry_price"]) * tracked["qty"]
-                log.info("%s: EXIT (%s) after %d days, pnl~%.2f", symbol, reason, days_held, pnl)
-                try:
-                    broker.exit_position(symbol)
-                except Exception as e:
-                    log.error("%s: exit failed, will retry next run: %s", symbol, e)
-                    continue
-                if live:
-                    risk.record_closed_trade(state, pnl)
-                    del state["positions"][symbol]
-                journal.log_trade(
-                    trades_csv, symbol=symbol, side="SELL", qty=tracked["qty"],
-                    price=round(float(row["close"]), 2), reason=reason,
-                    posture=posture_name, exposure_cap=cap, pnl=round(pnl, 2),
-                    dry_run=args.paper_dry,
-                )
-            else:
-                log.info("%s: holding (%d days)", symbol, days_held)
+        if not tracked:
             continue
-
-        if halted or cap <= 0:
-            if entry_signal(row, params):
-                log.info("%s: entry signal suppressed (%s)", symbol,
-                         halt_reason if halted else "posture RISK_OFF")
-            continue
-        if entry_signal(row, params):
-            qty = risk.target_qty(equity, float(row["close"]), cfg, cap)
-            if qty < 1:
-                log.info("%s: entry signal but sized to 0 shares under cap %.0f%%", symbol, cap * 100)
-                continue
-            stop = stop_price(float(row["close"]), float(row["atr"]), params)
-            log.info("%s: ENTER %d shares ~%.2f, stop %.2f", symbol, qty, row["close"], stop)
+        days_held = calendar_guard.trading_days_between(tracked["entry_date"], row.name)
+        reason = exit_signal(row, days_held, params)
+        if reason:
+            pnl = (row["close"] - tracked["entry_price"]) * tracked["qty"]
+            log.info("%s: EXIT (%s) after %d days, pnl~%.2f", symbol, reason, days_held, pnl)
             try:
-                broker.submit_entry(symbol, qty, stop)
-            except DuplicateOrder:
-                log.info("%s: entry already submitted today (idempotency guard)", symbol)
-                continue
+                broker.exit_position(symbol)
             except Exception as e:
-                log.error("%s: entry failed: %s", symbol, e)
+                log.error("%s: exit failed, will retry next run: %s", symbol, e)
                 continue
             if live:
-                state["positions"][symbol] = {
-                    "qty": qty,
-                    "entry_price": float(row["close"]),
-                    "entry_date": str(row.name.date()),
-                    "stop": stop,
-                }
+                risk.record_closed_trade(state, pnl)
+                del state["positions"][symbol]
             journal.log_trade(
-                trades_csv, symbol=symbol, side="BUY", qty=qty,
-                price=round(float(row["close"]), 2), reason="rsi_pullback",
-                posture=posture_name, exposure_cap=cap, dry_run=args.paper_dry,
+                trades_csv, symbol=symbol, side="SELL", qty=tracked["qty"],
+                price=round(float(row["close"]), 2), reason=reason,
+                posture=posture_name, exposure_cap=cap, pnl=round(pnl, 2),
+                dry_run=args.paper_dry,
             )
         else:
-            log.info("%s: no signal", symbol)
+            log.info("%s: holding (%d days)", symbol, days_held)
+
+    # ---- pass 2: entries, sized against remaining posture-cap headroom ----
+    exposure = sum(
+        pos["qty"] * float(latest[s]["close"]) / equity
+        for s, pos in state["positions"].items()
+        if s in latest
+    )
+    entry_window = float(cfg.get("execution", {}).get("entry_window_minutes", 75))
+    entries_allowed = args.force or (open_now and minutes_left <= entry_window)
+    if not entries_allowed:
+        log.info(
+            "entries disabled this run (%s; window is last %.0f min before close) - "
+            "exits were still processed", guard_note, entry_window,
+        )
+
+    for symbol, row in latest.items():
+        if symbol in state["positions"] or not entry_signal(row, params):
+            if symbol not in state["positions"]:
+                log.info("%s: no signal", symbol)
+            continue
+        if not entries_allowed:
+            log.info("%s: entry signal present but outside the entry window", symbol)
+            continue
+        if halted or cap <= 0:
+            log.info("%s: entry signal suppressed (%s)", symbol,
+                     halt_reason if halted else "posture RISK_OFF")
+            continue
+        qty = risk.target_qty(equity, float(row["close"]), cfg, cap, exposure)
+        if qty < 1:
+            log.info("%s: entry signal but 0 shares fit under cap %.0f%% "
+                     "(current exposure %.0f%%)", symbol, cap * 100, exposure * 100)
+            continue
+        stop = stop_price(float(row["close"]), float(row["atr"]), params)
+        log.info("%s: ENTER %d shares ~%.2f, stop %.2f", symbol, qty, row["close"], stop)
+        try:
+            broker.submit_entry(symbol, qty, stop)
+        except DuplicateOrder:
+            log.info("%s: entry already submitted today (idempotency guard)", symbol)
+            continue
+        except Exception as e:
+            log.error("%s: entry failed: %s", symbol, e)
+            continue
+        exposure += qty * float(row["close"]) / equity
+        if live:
+            state["positions"][symbol] = {
+                "qty": qty,
+                "entry_price": float(row["close"]),
+                "entry_date": str(row.name.date()),
+                "stop": stop,
+            }
+        journal.log_trade(
+            trades_csv, symbol=symbol, side="BUY", qty=qty,
+            price=round(float(row["close"]), 2), reason="rsi_pullback",
+            posture=posture_name, exposure_cap=cap, dry_run=args.paper_dry,
+        )
 
     journal.log_equity(
         repo_path(cfg["paths"]["equity_csv"]),

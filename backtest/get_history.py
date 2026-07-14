@@ -4,7 +4,9 @@ yfinance is fine for one-off research pulls like this; the live bot uses
 Alpaca's official API instead.
 """
 import sys
+from datetime import datetime, time
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import yfinance as yf
@@ -26,6 +28,12 @@ def fetch(symbol: str) -> pd.DataFrame:
     df = df.rename(columns=str.lower)[["open", "high", "low", "close", "volume"]]
     df.index = pd.DatetimeIndex(df.index).normalize()
     df.index.name = "date"
+    # If run intraday, today's bar is still forming — a partial bar in the
+    # backtest dataset would poison the final day's signals. Keep it only
+    # once the session is over (past ~16:15 ET).
+    now_et = datetime.now(ZoneInfo("America/New_York"))
+    if now_et.time() < time(16, 15):
+        df = df[df.index < pd.Timestamp(now_et.date())]
     return df
 
 

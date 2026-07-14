@@ -41,6 +41,10 @@ def load_posture(cfg: dict) -> tuple[str, float, str]:
         generated = generated.replace(tzinfo=timezone.utc)
     age_hours = (datetime.now(timezone.utc) - generated).total_seconds() / 3600.0
     if age_hours > float(pcfg["stale_hours"]):
+        if posture == "RISK_OFF":
+            # A stale RISK_OFF must not ease back to NEUTRAL on its own — the
+            # fallback may never carry more risk than the last valid posture.
+            return "RISK_OFF", 0.0, f"stale RISK_OFF preserved ({age_hours:.1f}h old)"
         return fallback(f"stale ({age_hours:.1f}h old)")
 
     cap = float(caps[posture])

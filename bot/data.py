@@ -33,7 +33,7 @@ def _normalize_index_to_et_dates(idx: pd.DatetimeIndex) -> pd.DatetimeIndex:
 
 
 def _alpaca_bars(symbol: str, lookback_days: int) -> pd.DataFrame:
-    from alpaca.data.enums import DataFeed
+    from alpaca.data.enums import Adjustment, DataFeed
     from alpaca.data.historical import StockHistoricalDataClient
     from alpaca.data.requests import StockBarsRequest, StockSnapshotRequest
     from alpaca.data.timeframe import TimeFrame
@@ -42,8 +42,11 @@ def _alpaca_bars(symbol: str, lookback_days: int) -> pd.DataFrame:
         os.environ["ALPACA_API_KEY"], os.environ["ALPACA_SECRET_KEY"]
     )
     start = datetime.now(timezone.utc) - timedelta(days=int(lookback_days * 1.6))
+    # adjustment=ALL keeps live indicators consistent with the dividend/split-
+    # adjusted backtest data; raw bars would kink the SMA at every ex-date.
     req = StockBarsRequest(
-        symbol_or_symbols=symbol, timeframe=TimeFrame.Day, start=start, feed=DataFeed.IEX
+        symbol_or_symbols=symbol, timeframe=TimeFrame.Day, start=start,
+        feed=DataFeed.IEX, adjustment=Adjustment.ALL,
     )
     raw = client.get_stock_bars(req).df
     if isinstance(raw.index, pd.MultiIndex):

@@ -11,8 +11,8 @@ Mapping guidance:
 - Breadth < 40, or distribution HIGH/SEVERE, or both skills failed → RISK_OFF, max_exposure 0.0
 - You may pick intermediate max_exposure values below the cap for your posture, never above.
 
-Output format — this is machine-parsed. The LAST thing in your reply must be a single JSON object on its own lines, no code fences, no trailing commentary:
+Output format — this is machine-parsed. The LAST thing in your reply must be a single JSON object on its own lines, no code fences, no trailing commentary. Example shape (deliberately the neutral default — replace every value with your actual analysis):
 
-{"posture": "RISK_ON", "max_exposure": 0.9, "reasons": ["breadth 72/100 healthy", "distribution days: 2 on QQQ, NORMAL"]}
+{"posture": "NEUTRAL", "max_exposure": 0.5, "reasons": ["<short reason citing a skill output>", "<short reason>"]}
 
 "posture" must be exactly one of RISK_ON, NEUTRAL, RISK_OFF. "max_exposure" must be a number between 0.0 and 0.9. "reasons" must be 1-4 short strings citing the skill outputs you used.

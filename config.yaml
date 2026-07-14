@@ -19,6 +19,11 @@ risk:
   max_drawdown_halt: 0.15      # halt new entries if equity falls this far from peak
   max_consecutive_losses: 3    # halt new entries after this many losing closes
 
+execution:
+  entry_window_minutes: 75     # only open new positions this close to the bell;
+                               # a delayed catch-up run manages exits but won't
+                               # enter on an untested mid-morning signal
+
 posture:
   file: posture/posture.json
   stale_hours: 24

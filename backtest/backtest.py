@@ -215,14 +215,15 @@ def report(history, params, cfg) -> None:
 
 def sweep(history, base: StrategyParams, cfg) -> None:
     bt = cfg["backtest"]
-    print("\n=== ROBUSTNESS SWEEP (full period; look for a plateau, not a spike) ===")
+    print("\n=== ROBUSTNESS SWEEP (IN-SAMPLE ONLY, so the out-of-sample period "
+          "stays untouched by parameter selection) ===")
     print(f"{'rsi_buy':>8} {'sma':>5} {'trades':>7} {'win%':>7} {'PF':>6} {'CAGR':>8} {'maxDD':>8}")
     combos = 0
     for rsi_buy in (5.0, 7.5, 10.0, 12.5, 15.0):
         for sma in (150, 175, 200, 225, 250):
             combos += 1
             p = replace(base, rsi_buy_below=rsi_buy, sma_period=sma)
-            trades, curve = simulate(history, p, cfg, bt["start"])
+            trades, curve = simulate(history, p, cfg, bt["start"], bt["in_sample_end"])
             m = metrics(trades, curve, float(bt["initial_cash"]))
             if not m or "win_rate" not in m:
                 print(f"{rsi_buy:>8} {sma:>5} {'—':>7}")

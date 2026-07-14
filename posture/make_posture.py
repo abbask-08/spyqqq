@@ -47,6 +47,11 @@ def extract_json(text: str) -> dict | None:
 
 
 def main() -> int:
+    # Task Scheduler redirects output through a cp1252 console; without this,
+    # a unicode character in an error path crashes the error handler itself.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace")
     claude = shutil.which("claude")
     if not claude:
         print("ERROR: claude CLI not found on PATH", file=sys.stderr)

@@ -64,10 +64,16 @@ def record_closed_trade(state: dict, pnl: float) -> None:
         state["consecutive_losses"] = 0
 
 
-def target_qty(equity: float, price: float, cfg: dict, exposure_cap: float) -> int:
-    """Whole shares (Alpaca bracket/OTO orders reject fractional quantities)."""
-    n_symbols = len(cfg["symbols"])
-    weight = min(float(cfg["risk"]["weight_per_symbol"]), exposure_cap / n_symbols)
+def target_qty(
+    equity: float, price: float, cfg: dict, exposure_cap: float, current_exposure: float
+) -> int:
+    """Whole shares (Alpaca bracket/OTO orders reject fractional quantities).
+
+    Sized against the *remaining* headroom under the posture cap — the cap is
+    on total gross exposure, so positions already held count against it.
+    """
+    headroom = exposure_cap - current_exposure
+    weight = min(float(cfg["risk"]["weight_per_symbol"]), headroom)
     if weight <= 0 or price <= 0:
         return 0
     return int(math.floor(equity * weight / price))
