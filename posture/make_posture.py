@@ -9,41 +9,71 @@ Deliberate hardening:
 - On any failure this script exits non-zero WITHOUT touching posture.json;
   the bot then falls back via its staleness check. Claude being down can
   never break the trading run.
+- Grounding check: Claude's stated posture is verified against the actual
+  skill-output artifacts from this same run (see common.expected_ceiling).
+  A posture riskier than the numbers support is rejected outright, same as
+  any other failure — never written, bot falls back via staleness.
 """
+import glob
 import json
 import shutil
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from common import (  # noqa: E402
+    POSTURE_CAPS, VALID_POSTURES, expected_ceiling, extract_json, risk_rank,
+)
+
 HERE = Path(__file__).resolve().parent
+REPO = HERE.parent
 PROMPT_FILE = HERE / "posture_prompt.md"
 OUT_FILE = HERE / "posture.json"
-VALID_POSTURES = {"RISK_ON", "NEUTRAL", "RISK_OFF"}
 MAX_TURNS = "30"
 TIMEOUT_S = 1200
+ARTIFACT_FRESHNESS = timedelta(hours=2)  # must be written during this run, not a stale leftover
 
 
-def extract_json(text: str) -> dict | None:
-    """Find the last valid JSON object in the reply that has a posture key."""
-    starts = [i for i, ch in enumerate(text) if ch == "{"]
-    for i in reversed(starts):
-        depth = 0
-        for j in range(i, len(text)):
-            if text[j] == "{":
-                depth += 1
-            elif text[j] == "}":
-                depth -= 1
-                if depth == 0:
-                    try:
-                        obj = json.loads(text[i : j + 1])
-                    except json.JSONDecodeError:
-                        break
-                    if isinstance(obj, dict) and "posture" in obj:
-                        return obj
-                    break
-    return None
+def _freshest(pattern: str) -> Path | None:
+    candidates = [Path(p) for p in glob.glob(pattern)]
+    if not candidates:
+        return None
+    newest = max(candidates, key=lambda p: p.stat().st_mtime)
+    age = datetime.now() - datetime.fromtimestamp(newest.stat().st_mtime)
+    return newest if age <= ARTIFACT_FRESHNESS else None
+
+
+def ground_truth() -> tuple[float | None, str | None, list[str]]:
+    """Pull breadth composite + distribution risk from this run's own skill
+    artifacts. Returns (breadth_score, distribution_risk, notes)."""
+    notes = []
+    breadth_score = None
+    breadth_file = _freshest(str(REPO / "market_breadth_*.json"))
+    if breadth_file is None:
+        notes.append("no fresh market-breadth-analyzer artifact found")
+    else:
+        try:
+            breadth_score = float(
+                json.loads(breadth_file.read_text(encoding="utf-8"))["composite"]["composite_score"]
+            )
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as e:
+            notes.append(f"unreadable breadth artifact {breadth_file.name}: {e}")
+
+    distribution_risk = None
+    dist_file = _freshest(str(REPO / "reports" / "ibd_distribution_day_monitor_*.json"))
+    if dist_file is None:
+        notes.append("no fresh ibd-distribution-day-monitor artifact found")
+    else:
+        try:
+            distribution_risk = json.loads(dist_file.read_text(encoding="utf-8"))[
+                "market_distribution_state"
+            ]["overall_risk_level"]
+        except (KeyError, TypeError, json.JSONDecodeError) as e:
+            notes.append(f"unreadable distribution artifact {dist_file.name}: {e}")
+
+    return breadth_score, distribution_risk, notes
 
 
 def main() -> int:
@@ -101,14 +131,34 @@ def main() -> int:
         print(f"ERROR: invalid max_exposure {posture.get('max_exposure')!r}", file=sys.stderr)
         return 1
 
+    breadth_score, distribution_risk, notes = ground_truth()
+    for n in notes:
+        print(f"grounding: {n}")
+    ceiling = expected_ceiling(breadth_score, distribution_risk)
+    claimed = posture["posture"]
+    if risk_rank(claimed) > risk_rank(ceiling):
+        print(
+            f"ERROR: grounding check failed — Claude claimed {claimed} but the actual skill "
+            f"artifacts (breadth={breadth_score}, distribution_risk={distribution_risk!r}) "
+            f"only justify up to {ceiling}. Refusing to write a posture riskier than the data "
+            f"supports.", file=sys.stderr,
+        )
+        return 1
+    exposure = min(exposure, POSTURE_CAPS[claimed])
+
     doc = {
-        "posture": posture["posture"],
+        "posture": claimed,
         "max_exposure": min(0.9, max(0.0, exposure)),
         "reasons": [str(r) for r in posture.get("reasons", [])][:4],
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "grounding": {
+            "breadth_score": breadth_score,
+            "distribution_risk": distribution_risk,
+            "ceiling": ceiling,
+        },
     }
     OUT_FILE.write_text(json.dumps(doc, indent=2), encoding="utf-8")
-    print(f"wrote {OUT_FILE.name}: {doc['posture']} cap={doc['max_exposure']}")
+    print(f"wrote {OUT_FILE.name}: {doc['posture']} cap={doc['max_exposure']} (ceiling {ceiling})")
     return 0
 
 

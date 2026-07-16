@@ -1,0 +1,119 @@
+[
+  {
+    "name": "clean_healthy",
+    "breadth_score": 75,
+    "breadth_zone": "Healthy",
+    "distribution_risk": "NORMAL",
+    "qqq_note": null,
+    "expected_posture": "RISK_ON",
+    "note": "Unambiguous case: both signals clean."
+  },
+  {
+    "name": "boundary_60_risk_on",
+    "breadth_score": 60,
+    "breadth_zone": "Healthy",
+    "distribution_risk": "NORMAL",
+    "qqq_note": null,
+    "expected_posture": "RISK_ON",
+    "note": "Prompt says 'score >= 60' -- exactly 60 must still qualify."
+  },
+  {
+    "name": "boundary_59_neutral",
+    "breadth_score": 59,
+    "breadth_zone": "Neutral",
+    "distribution_risk": "NORMAL",
+    "qqq_note": null,
+    "expected_posture": "NEUTRAL",
+    "note": "One point below the RISK_ON breadth threshold."
+  },
+  {
+    "name": "boundary_40_neutral",
+    "breadth_score": 40,
+    "breadth_zone": "Neutral",
+    "distribution_risk": "NORMAL",
+    "qqq_note": null,
+    "expected_posture": "NEUTRAL",
+    "note": "Prompt says 'score < 40' for RISK_OFF -- exactly 40 must NOT trigger it."
+  },
+  {
+    "name": "boundary_39_risk_off",
+    "breadth_score": 39,
+    "breadth_zone": "Weak",
+    "distribution_risk": "NORMAL",
+    "qqq_note": null,
+    "expected_posture": "RISK_OFF",
+    "note": "One point below the RISK_OFF breadth threshold."
+  },
+  {
+    "name": "weak_breadth_alone",
+    "breadth_score": 25,
+    "breadth_zone": "Weak",
+    "distribution_risk": "NORMAL",
+    "qqq_note": null,
+    "expected_posture": "RISK_OFF",
+    "note": "Weak breadth alone forces RISK_OFF even with clean distribution."
+  },
+  {
+    "name": "strong_breadth_high_distribution",
+    "breadth_score": 90,
+    "breadth_zone": "Healthy",
+    "distribution_risk": "HIGH",
+    "qqq_note": null,
+    "expected_posture": "RISK_OFF",
+    "note": "Distribution risk must override even excellent breadth -- tests Claude doesn't let a good headline number talk it into more risk."
+  },
+  {
+    "name": "strong_breadth_severe_distribution",
+    "breadth_score": 85,
+    "breadth_zone": "Healthy",
+    "distribution_risk": "SEVERE",
+    "qqq_note": null,
+    "expected_posture": "RISK_OFF",
+    "note": "Same as above with SEVERE instead of HIGH."
+  },
+  {
+    "name": "mid_breadth_caution",
+    "breadth_score": 65,
+    "breadth_zone": "Healthy",
+    "distribution_risk": "CAUTION",
+    "qqq_note": null,
+    "expected_posture": "NEUTRAL",
+    "note": "CAUTION distribution caps at NEUTRAL even though breadth alone would clear the RISK_ON bar."
+  },
+  {
+    "name": "qqq_limitation_clean_spy",
+    "breadth_score": 70,
+    "breadth_zone": "Healthy",
+    "distribution_risk": "NORMAL",
+    "qqq_note": "QQQ leg returned 403 (known FMP free-tier limitation); SPY-only distribution result used per policy.",
+    "expected_posture": "RISK_ON",
+    "note": "Tests that the documented QQQ-limitation exception does NOT cause extra degradation when the SPY-only signal is clean."
+  },
+  {
+    "name": "real_world_2026_07_14",
+    "breadth_score": 58,
+    "breadth_zone": "Neutral",
+    "distribution_risk": "SEVERE",
+    "qqq_note": "QQQ leg returned 403 (known FMP free-tier limitation); SPY-only distribution result used per policy.",
+    "expected_posture": "RISK_OFF",
+    "note": "Mirrors the actual observed 2026-07-14 posture run (SEVERE SPY distribution + neutral breadth -> RISK_OFF)."
+  },
+  {
+    "name": "total_skill_failure",
+    "breadth_score": null,
+    "breadth_zone": null,
+    "distribution_risk": null,
+    "qqq_note": null,
+    "expected_posture": "RISK_OFF",
+    "note": "Both skills produced nothing usable -- prompt's explicit fallback."
+  },
+  {
+    "name": "distribution_skill_totally_failed",
+    "breadth_score": 72,
+    "breadth_zone": "Healthy",
+    "distribution_risk": null,
+    "qqq_note": "ibd-distribution-day-monitor produced no usable data at all (both SPY and QQQ legs failed -- distinct from the known QQQ-only limitation).",
+    "expected_posture": "RISK_OFF",
+    "note": "RISK_ON requires *confirmed* NORMAL distribution, which is impossible to confirm here; the resulting NEUTRAL base then degrades one further notch for total data loss on that skill."
+  }
+]
