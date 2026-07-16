@@ -44,4 +44,5 @@ paths:
   state_file: logs/bot_state.json
   trades_csv: logs/trades.csv
   equity_csv: logs/equity_curve.csv
+  signals_csv: logs/signals.csv
   history_dir: data

@@ -16,6 +16,7 @@ Flags:
 """
 import argparse
 import logging
+import math
 import sys
 
 from dotenv import load_dotenv
@@ -160,6 +161,16 @@ def main() -> int:
             "%s close=%.2f sma=%.2f rsi=%.1f atr=%.2f",
             symbol, row["close"], row["sma"], row["rsi"], row["atr"],
         )
+        def _num(x: float) -> float | str:
+            return "" if math.isnan(x) else round(x, 2)
+
+        journal.log_signal(
+            repo_path(cfg["paths"]["signals_csv"]),
+            date=today, symbol=symbol, close=round(float(row["close"]), 2),
+            sma=_num(float(row["sma"])), rsi=_num(float(row["rsi"])), atr=_num(float(row["atr"])),
+            in_regime="" if math.isnan(float(row["sma"])) else bool(row["close"] > row["sma"]),
+            entry_signal=entry_signal(row, params),
+        )
 
         tracked = state["positions"].get(symbol)
         if not tracked:
@@ -249,6 +260,14 @@ def main() -> int:
     if live:
         state["last_run_date"] = today
         risk.save_state(state_path, state)
+
+    try:
+        from reports.build_dashboard import main as build_dashboard
+
+        build_dashboard()
+    except Exception as e:  # dashboard is a convenience, never fail the trading run over it
+        log.warning("dashboard regeneration failed (non-fatal): %s", e)
+
     log.info("run complete")
     return 0
 

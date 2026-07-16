@@ -31,6 +31,7 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
 PROMPT_FILE = HERE / "posture_prompt.md"
 OUT_FILE = HERE / "posture.json"
+HISTORY_FILE = HERE / "posture_history.jsonl"
 MAX_TURNS = "30"
 TIMEOUT_S = 1200
 ARTIFACT_FRESHNESS = timedelta(hours=2)  # must be written during this run, not a stale leftover
@@ -158,6 +159,8 @@ def main() -> int:
         },
     }
     OUT_FILE.write_text(json.dumps(doc, indent=2), encoding="utf-8")
+    with open(HISTORY_FILE, "a", encoding="utf-8") as f:
+        f.write(json.dumps(doc) + "\n")
     print(f"wrote {OUT_FILE.name}: {doc['posture']} cap={doc['max_exposure']} (ceiling {ceiling})")
     return 0
 

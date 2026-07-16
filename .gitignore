@@ -5,6 +5,8 @@
 logs/
 data/*.csv
 posture/posture.json
+posture/posture_history.jsonl
+reports/dashboard.html
 __pycache__/
 *.pyc
 .venv/

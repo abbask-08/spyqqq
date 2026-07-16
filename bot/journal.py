@@ -8,6 +8,7 @@ TRADE_FIELDS = [
     "posture", "exposure_cap", "pnl", "dry_run",
 ]
 EQUITY_FIELDS = ["date", "equity", "posture", "exposure_cap", "note"]
+SIGNAL_FIELDS = ["date", "symbol", "close", "sma", "rsi", "atr", "in_regime", "entry_signal"]
 
 
 def _append(path: Path, fields: list[str], row: dict) -> None:
@@ -31,3 +32,13 @@ def log_equity(path: Path, **kwargs) -> None:
     row = {k: "" for k in EQUITY_FIELDS}
     row.update({k: v for k, v in kwargs.items() if k in EQUITY_FIELDS})
     _append(path, EQUITY_FIELDS, row)
+
+
+def log_signal(path: Path, **kwargs) -> None:
+    """One row per symbol per run: the indicator snapshot behind the day's
+    entry/no-signal decision. Exists so the dashboard can chart RSI's
+    distance from the entry threshold over time without re-parsing bot.log.
+    """
+    row = {k: "" for k in SIGNAL_FIELDS}
+    row.update({k: v for k, v in kwargs.items() if k in SIGNAL_FIELDS})
+    _append(path, SIGNAL_FIELDS, row)
