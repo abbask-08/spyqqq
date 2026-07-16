@@ -268,6 +268,13 @@ def main() -> int:
     except Exception as e:  # dashboard is a convenience, never fail the trading run over it
         log.warning("dashboard regeneration failed (non-fatal): %s", e)
 
+    try:
+        from reports.export_snapshot import main as export_snapshot
+
+        export_snapshot()
+    except Exception as e:  # same: the hosted site is a convenience, not a trading dependency
+        log.warning("JSON snapshot export failed (non-fatal): %s", e)
+
     log.info("run complete")
     return 0
 

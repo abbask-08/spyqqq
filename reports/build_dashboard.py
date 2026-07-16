@@ -5,8 +5,6 @@ opens locally with no internet. Run standalone:
 Also called automatically at the end of every run_bot.py run (best-effort --
 a dashboard failure must never affect trading).
 """
-import csv
-import json
 import math
 import sys
 from datetime import date, datetime, timedelta
@@ -14,62 +12,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from bot.config import load_config, repo_path  # noqa: E402
+from reports.data_sources import (  # noqa: E402
+    POSTURE_JSON, STATE_JSON, compute_current_status, read_csv_rows,
+    read_equity_curve, read_json, read_posture_history, read_signals,
+)
 
 OUT_FILE = repo_path("reports/dashboard.html")
-POSTURE_HISTORY = repo_path("posture/posture_history.jsonl")
-POSTURE_JSON = repo_path("posture/posture.json")
-STATE_JSON = repo_path("logs/bot_state.json")
 
 STATUS_COLOR = {"RISK_ON": "good", "NEUTRAL": "warning", "RISK_OFF": "critical"}
-STATUS_HEX_LIGHT = {"good": "#0ca30c", "warning": "#fab219", "critical": "#d03b3b"}
-STATUS_HEX_DARK = {"good": "#0ca30c", "warning": "#fab219", "critical": "#d03b3b"}
 SYMBOL_SLOT = {"SPY": 1, "QQQ": 2}  # fixed categorical order, per palette.md
-
-
-def read_csv_rows(path: Path) -> list[dict]:
-    if not path.exists():
-        return []
-    with open(path, encoding="utf-8") as f:
-        return list(csv.DictReader(f))
-
-
-def read_equity_curve() -> list[dict]:
-    """Live rows only (dry-run rows use a fake $100k account and would blow
-    out the scale), deduped to the last row per date."""
-    rows = [r for r in read_csv_rows(repo_path("logs/equity_curve.csv")) if r.get("note") != "dry"]
-    by_date = {}
-    for r in rows:
-        by_date[r["date"]] = r  # last write for a given date wins
-    return [by_date[d] for d in sorted(by_date)]
-
-
-def read_signals() -> dict:
-    rows = read_csv_rows(repo_path("logs/signals.csv"))
-    by_symbol = {}
-    for r in rows:
-        if r.get("rsi") in (None, ""):
-            continue
-        by_symbol.setdefault(r["symbol"], []).append(r)
-    for sym in by_symbol:
-        by_symbol[sym] = sorted(by_symbol[sym], key=lambda r: r["date"])
-    return by_symbol
-
-
-def read_posture_history() -> list[dict]:
-    if not POSTURE_HISTORY.exists():
-        return []
-    out = []
-    for line in POSTURE_HISTORY.read_text(encoding="utf-8").splitlines():
-        if line.strip():
-            out.append(json.loads(line))
-    return out
-
-
-def read_json(path: Path) -> dict:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
 
 
 # ---------------------------------------------------------------- SVG helpers
@@ -259,19 +210,15 @@ def trades_table(trades: list[dict]) -> str:
 
 
 def stat_tiles(equity_rows: list[dict], current_posture: dict, state: dict) -> str:
-    equity = float(equity_rows[-1]["equity"]) if equity_rows else None
-    posture = current_posture.get("posture", "unknown")
+    status_data = compute_current_status(equity_rows, current_posture, state)
+    equity = status_data["equity"]
+    posture = status_data["posture"]
     status = STATUS_COLOR.get(posture, "warning")
-    cap = current_posture.get("max_exposure")
-    positions = state.get("positions", {})
-    halted = state.get("halted", False)
-    first_day = equity_rows[0]["date"] if equity_rows else None
-    gate_date = review_date = ""
-    days_elapsed = ""
-    if first_day:
-        start = datetime.strptime(first_day, "%Y-%m-%d").date()
-        days_elapsed = (date.today() - start).days
-        gate_date = (start + timedelta(days=30)).isoformat()
+    cap = status_data["max_exposure"]
+    positions = status_data["positions"]
+    halted = status_data["halted"]
+    days_elapsed = status_data["days_elapsed"]
+    gate_date = status_data["real_money_gate_date"]
 
     def tile(label, value, extra_class=""):
         return f'<div class="stat-tile"><div class="stat-label">{label}</div><div class="stat-value {extra_class}">{value}</div></div>'
@@ -281,7 +228,7 @@ def stat_tiles(equity_rows: list[dict], current_posture: dict, state: dict) -> s
         tile("Posture", f'<span class="badge badge-{status}">{posture}</span> ({cap:.0%})' if cap is not None else posture),
         tile("Open positions", len(positions) or "flat"),
         tile("Kill switch", "HALTED" if halted else "clear", "pnl-neg" if halted else "pnl-pos"),
-        tile("Days paper trading", days_elapsed if days_elapsed != "" else "-"),
+        tile("Days paper trading", days_elapsed if days_elapsed is not None else "-"),
         tile("Real-money gate (30d)", gate_date or "-"),
     ]
     return f'<div class="stat-grid">{"".join(tiles)}</div>'
